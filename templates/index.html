@@ -159,6 +159,7 @@
         uploadArea.classList.remove("active");
       });
 
+    //   Penjelasan: Fungsi handleFiles() akan menangani file yang diupload oleh pengguna
       function handleFiles(files) {
         fileList.innerHTML = "";
         message.style.display = "none";
@@ -197,6 +198,7 @@
         }
       }
 
+    // Penjelasan: Fungsi uploadFile() akan mengirimkan file yang diupload ke server menggunakan XMLHttpRequest
       function uploadFile(formData) {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", "/upload", true);
