@@ -28,9 +28,55 @@ def ekstrak_judul(dokumen):
     return "Judul Tidak Ditemukan"
 
 
+def ekstrak_nama(dokumen):
+    nama = None
+    nomor_mahasiswa = None
+    paragraf_sebelum_nomor = None
+
+    for para in dokumen.paragraphs:
+        teks = para.text.strip()
+        
+        # Cek apakah teks berupa angka (biasanya nomor mahasiswa)
+        if teks.isdigit() and len(teks) > 7:
+            nomor_mahasiswa = teks
+            # Nama kemungkinan ada di paragraf sebelumnya
+            paragraf_sebelum_nomor = para._element.getprevious()
+            if paragraf_sebelum_nomor is not None:
+                nama = paragraf_sebelum_nomor.text.strip()
+            break
+
+    if nama:
+        return nama
+    else:
+        return "Nama Tidak Ditemukan"
+
+def ekstrak_institusi(dokumen):
+    institusi = None
+    
+    # Loop untuk memeriksa paragraf pada halaman pertama saja
+    for para in dokumen.paragraphs:
+        teks = para.text.strip()
+        
+        # Jika menemukan kata "Universitas", ambil teks tersebut
+        if teks.lower().startswith("universitas"):
+            institusi = teks
+            break
+        
+        # Jika menemukan indikator halaman baru, berhenti loop
+        if "Page Break" in para._element.xml:
+            break
+
+    if institusi:
+        return institusi
+    else:
+        return "Institusi Tidak Ditemukan"
+
+
 def ekstrak_bagian_dengan_nlp(dokumen):
     bagian = {
         "Judul": ekstrak_judul(dokumen),
+        "Nama Penulis": ekstrak_nama(dokumen),
+        "Institusi": ekstrak_institusi(dokumen),
         "Abstrak": [],
         "Abstract": [],
         "Pendahuluan": [],
@@ -41,8 +87,6 @@ def ekstrak_bagian_dengan_nlp(dokumen):
         "Keywords": "",
         "Kata Kunci": "",
     }
-
-    bagian["Judul"] = ekstrak_judul(dokumen)
     
     section_flags = {
         "dalam_abstrak": False,
@@ -72,7 +116,7 @@ def ekstrak_bagian_dengan_nlp(dokumen):
             continue
 
         # Baris ini digunakan untuk mengabaikan bagian yang tidak perlu diambil
-        if any(keyword in text for keyword in ["Keywords", "Keyword", "Kata Kunci", "UCAPAN TERIMA KASIH", "BAB"]):
+        if any(keyword in text for keyword in ["Keywords", "Keyword", "Kata Kunci", "UCAPAN TERIMA KASIH", "LAMPIRAN"]):
             reset_flags(section_flags)
             current_section = None
             continue
@@ -87,26 +131,31 @@ def ekstrak_bagian_dengan_nlp(dokumen):
             current_section = "Abstrak"
             reset_flags(section_flags)
             section_flags["dalam_abstrak"] = True        
-        elif "PENDAHULUAN" in text:
+        elif "PENDAHULUAN" in text and (para.style.name.startswith("Heading") or para.style.name.startswith("SUB")):
             current_section = "Pendahuluan"
             reset_flags(section_flags)
             section_flags["dalam_pendahuluan"] = True
-        elif "METODE PENELITIAN" in text:
+        elif "METODE PENELITIAN" in text and (para.style.name.startswith("Heading") or para.style.name.startswith("SUB")):
             current_section = "Metode Penelitian"
             reset_flags(section_flags)
             section_flags["dalam_metode_penelitian"] = True
-        elif "HASIL DAN DISKUSI" in text or "HASIL DAN PEMBAHASAN" in text:
+        elif "HASIL DAN DISKUSI" in text or "HASIL DAN PEMBAHASAN" in text and (para.style.name.startswith("Heading") or para.style.name.startswith("SUB")):
             current_section = "Hasil dan Pembahasan"
             reset_flags(section_flags)
             section_flags["dalam_hasil_dan_pembahasan"] = True
-        elif "KESIMPULAN" in text or "PENUTUP" in text:
+        elif "KESIMPULAN" in text or "PENUTUP" in text and (para.style.name.startswith("Heading") or para.style.name.startswith("SUB")):
             current_section = "Kesimpulan"
             reset_flags(section_flags)
             section_flags["dalam_kesimpulan"] = True
-        elif "REFERENSI" in text or "DAFTAR PUSTAKA" in text:
+        elif "REFERENSI" in text or "DAFTAR PUSTAKA" in text and (para.style.name.startswith("Heading") or para.style.name.startswith("SUB")):
             current_section = "Referensi"
             reset_flags(section_flags)
             section_flags["dalam_referensi"] = True
+        # Abaikan Ekstraksi Seluruh Bagian BAB
+        elif "BAB" in text:
+            reset_flags(section_flags)
+            current_section = None
+            continue
         elif para.style.name.startswith("Heading"):
             continue
         else:
@@ -194,6 +243,27 @@ def sesuaikan_dengan_template(dokumen_template, bagian):
             run_judul.font.name = 'Arial'
             run_judul.bold = True
             p_judul.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+
+        elif "NP" in para.text:
+            para.clear()
+            penulis = bagian.get('Nama Penulis', [])
+            penulis_str = ''.join(penulis)
+
+            run_penulis = para.add_run(penulis_str)
+            run_penulis.font.size = Pt(10)
+            run_penulis.font.name = 'Arial'
+            run_penulis.bold = True
+            para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+
+        elif "INS" in para.text:
+            para.clear()
+            institusi = bagian.get('Institusi', [])
+            institusi_str = ''.join(institusi)
+            
+            run_institusi = para.add_run(institusi_str)
+            run_institusi.font.size = Pt(10)
+            run_institusi.font.name = 'Arial'
+            para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
         
         elif "AA1" in para.text:
             para.clear()
@@ -204,6 +274,9 @@ def sesuaikan_dengan_template(dokumen_template, bagian):
                 run.font.name = 'Arial'
                 run.italic = True
                 p_abstract.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
+                p_abstract.paragraph_format.space_before = Pt(3)
+                p_abstract.paragraph_format.space_after = Pt(3)
+                p_abstract.paragraph_format.line_spacing = 1.15
                 p_abstract.paragraph_format.first_line_indent = Inches(0.5)
 
         elif "AA2" in para.text:
@@ -213,6 +286,9 @@ def sesuaikan_dengan_template(dokumen_template, bagian):
                 p_abstrak.style.font.size = Pt(10)
                 p_abstrak.style.font.name = 'Arial'
                 p_abstrak.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
+                p_abstrak.paragraph_format.space_before = Pt(3)
+                p_abstrak.paragraph_format.space_after = Pt(3)
+                p_abstrak.paragraph_format.line_spacing = 1.15
                 p_abstrak.paragraph_format.first_line_indent = Inches(0.5)
         
         elif "AA3" in para.text:
@@ -225,12 +301,18 @@ def sesuaikan_dengan_template(dokumen_template, bagian):
                         p_pendahuluan.style.font.name = 'Arial'
                         p_pendahuluan.paragraph_format.left_indent = Inches(0.5)
                         p_pendahuluan.paragraph_format.first_line_indent = Inches(-0.15)
+                        p_pendahuluan.paragraph_format.space_before = Pt(3)
+                        p_pendahuluan.paragraph_format.space_after = Pt(3)
+                        p_pendahuluan.paragraph_format.line_spacing = 1.15
                         p_pendahuluan.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
                 else:
                     p_pendahuluan = para.insert_paragraph_before(item_pendahuluan)
                     p_pendahuluan.style.font.size = Pt(10)
                     p_pendahuluan.style.font.name = 'Arial'
                     p_pendahuluan.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
+                    p_pendahuluan.paragraph_format.space_before = Pt(3)
+                    p_pendahuluan.paragraph_format.space_after = Pt(3)
+                    p_pendahuluan.paragraph_format.line_spacing = 1.15
                     p_pendahuluan.paragraph_format.first_line_indent = Inches(0.5)
 
         elif "AA4" in para.text:
@@ -243,12 +325,18 @@ def sesuaikan_dengan_template(dokumen_template, bagian):
                         p_metode_penelitian.style.font.name = 'Arial'
                         p_metode_penelitian.paragraph_format.left_indent = Inches(0.5)
                         p_metode_penelitian.paragraph_format.first_line_indent = Inches(-0.15)
+                        p_metode_penelitian.paragraph_format.space_before = Pt(3)
+                        p_metode_penelitian.paragraph_format.space_after = Pt(3)
+                        p_metode_penelitian.paragraph_format.line_spacing = 1.15
                         p_metode_penelitian.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
                 else:
                     p_metode_penelitian = para.insert_paragraph_before(item_metode_penelitian)
                     p_metode_penelitian.style.font.size = Pt(10)
                     p_metode_penelitian.style.font.name = 'Arial'
                     p_metode_penelitian.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
+                    p_metode_penelitian.paragraph_format.space_before = Pt(3)
+                    p_metode_penelitian.paragraph_format.space_after = Pt(3)
+                    p_metode_penelitian.paragraph_format.line_spacing = 1.15
                     p_metode_penelitian.paragraph_format.first_line_indent = Inches(0.5)
 
         elif "AA5" in para.text:
@@ -261,12 +349,18 @@ def sesuaikan_dengan_template(dokumen_template, bagian):
                         p_hasil.style.font.name = 'Arial'
                         p_hasil.paragraph_format.left_indent = Inches(0.5)
                         p_hasil.paragraph_format.first_line_indent = Inches(-0.15)
+                        p_hasil.paragraph_format.space_before = Pt(3)
+                        p_hasil.paragraph_format.space_after = Pt(3)
+                        p_hasil.paragraph_format.line_spacing = 1.15
                         p_hasil.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
                 else:
                     p_hasil = para.insert_paragraph_before(item_hasil)
                     p_hasil.style.font.size = Pt(10)
                     p_hasil.style.font.name = 'Arial'
                     p_hasil.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
+                    p_hasil.paragraph_format.space_before = Pt(3)
+                    p_hasil.paragraph_format.space_after = Pt(3)
+                    p_hasil.paragraph_format.line_spacing = 1.15
                     p_hasil.paragraph_format.first_line_indent = Inches(0.5)
 
         elif "AA6" in para.text:
@@ -279,31 +373,58 @@ def sesuaikan_dengan_template(dokumen_template, bagian):
                         p_kesimpulan.style.font.name = 'Arial'
                         p_kesimpulan.paragraph_format.left_indent = Inches(0.5)
                         p_kesimpulan.paragraph_format.first_line_indent = Inches(-0.15)
+                        p_kesimpulan.paragraph_format.space_before = Pt(3)
+                        p_kesimpulan.paragraph_format.space_after = Pt(3)
+                        p_kesimpulan.paragraph_format.line_spacing = 1.15
                         p_kesimpulan.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
                 else:
                     p_kesimpulan = para.insert_paragraph_before(item_kesimpulan)
                     p_kesimpulan.style.font.size = Pt(10)
                     p_kesimpulan.style.font.name = 'Arial'
                     p_kesimpulan.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
+                    p_kesimpulan.paragraph_format.space_before = Pt(3)
+                    p_kesimpulan.paragraph_format.space_after = Pt(3)
+                    p_kesimpulan.paragraph_format.line_spacing = 1.15
                     p_kesimpulan.paragraph_format.first_line_indent = Inches(0.5)
 
         elif "AA7" in para.text:
             para.clear()
-            for item_referensi in bagian.get('Referensi', ['Tidak ada referensi ditemukan.']):
+            referensi_paragraf = bagian.get('Referensi', ['Tidak ada referensi ditemukan.'])
+            
+            # Inisiasi counter untuk penomoran IEEE
+            nomor_referensi = 1
+            
+            # Iterasi setiap paragraf dalam daftar referensi
+            for item_referensi in referensi_paragraf:
                 if isinstance(item_referensi, list):
-                    for i, list_item in enumerate(item_referensi, 1):
-                        p_referensi = para.insert_paragraph_before(f"{i}. {list_item}")
+                    for sub_item in item_referensi:
+                        # Buat paragraf baru dengan penomoran IEEE [1], [2], dst.
+                        p_referensi = para.insert_paragraph_before(f"[{nomor_referensi}] {sub_item}")
                         p_referensi.style.font.size = Pt(10)
                         p_referensi.style.font.name = 'Arial'
-                        p_referensi.paragraph_format.left_indent = Inches(0.5)
-                        p_referensi.paragraph_format.first_line_indent = Inches(-0.15)
+                        p_referensi.paragraph_format.left_indent = Inches(0.22)
+                        p_referensi.paragraph_format.first_line_indent = Inches(-0.22)
+                        p_referensi.paragraph_format.space_before = Pt(3)
+                        p_referensi.paragraph_format.space_after = Pt(3)
+                        p_referensi.paragraph_format.line_spacing = 1.15
                         p_referensi.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+                        
+                        # Increment nomor referensi
+                        nomor_referensi += 1
                 else:
-                    p_referensi = para.insert_paragraph_before(item_referensi)
+                    # Sama seperti di atas, namun untuk item tunggal
+                    p_referensi = para.insert_paragraph_before(f"[{nomor_referensi}] {item_referensi}")
                     p_referensi.style.font.size = Pt(10)
                     p_referensi.style.font.name = 'Arial'
                     p_referensi.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
-                    p_referensi.paragraph_format.first_line_indent = Inches(0.5)
+                    p_referensi.paragraph_format.left_indent = Inches(0.22)
+                    p_referensi.paragraph_format.first_line_indent = Inches(-0.22)
+                    p_referensi.paragraph_format.space_before = Pt(3)
+                    p_referensi.paragraph_format.space_after = Pt(3)
+                    p_referensi.paragraph_format.line_spacing = 1.15
+                    
+                    # Increment nomor referensi
+                    nomor_referensi += 1
 
         elif "Keyword: Maksimal 5 kata dari jurnal (dipisahkan dengan titik koma)" in para.text:
             para.clear()
