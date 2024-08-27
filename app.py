@@ -190,6 +190,8 @@ def ekstrak_bagian(dokumen):
             continue
         elif para.style.name.startswith("Heading") or para.style.name.startswith("SUB"):
             continue
+        elif "Tabel" in text or "Gambar" in text:
+            continue
         else:
             # Penjelasan: Jika bagian yang sedang diambil adalah bagian yang memiliki list,
             # maka list tersebut akan diambil sebagai satu item dalam list
@@ -249,6 +251,11 @@ def ekstrak_bagian(dokumen):
         bagian["Kesimpulan"].append(current_list_kesimpulan)
     if current_list_referensi:
         bagian["Referensi"].append(current_list_referensi)
+
+    # Memeriksa apakah ada bagian yang kosong
+    for key, value in bagian.items():
+        if not value:
+            return f"Bagian {key} tidak ditemukan."
 
     return bagian
 
