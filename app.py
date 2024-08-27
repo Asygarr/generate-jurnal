@@ -1,7 +1,6 @@
 from flask import Flask, request, send_file, jsonify, render_template
 from werkzeug.utils import secure_filename
 import os
-import spacy
 from docx import Document
 from docx.shared import Pt, Inches
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
@@ -14,8 +13,6 @@ if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 if not os.path.exists(PROCESSED_FOLDER):
     os.makedirs(PROCESSED_FOLDER)
-
-nlp = spacy.load("en_core_web_sm")
 
 def baca_template(path_template):
     return Document(path_template)
@@ -50,6 +47,7 @@ def ekstrak_nama(dokumen):
     else:
         return "Nama Tidak Ditemukan"
 
+
 def ekstrak_institusi(dokumen):
     institusi = None
     
@@ -72,7 +70,41 @@ def ekstrak_institusi(dokumen):
         return "Institusi Tidak Ditemukan"
 
 
-def ekstrak_bagian_dengan_nlp(dokumen):
+def ekstrak_keywords(dokumen):
+    keywords = None
+    
+    for para in dokumen.paragraphs:
+        teks = para.text.strip()
+        
+        # Mencari pola "Keywords:" (dengan case-insensitive)
+        if teks.lower().startswith("keywords:") or teks.lower().startswith("keyword:") or teks.lower().startswith("keywords :") or teks.lower().startswith("keyword :"):
+            keywords = teks[len("Keywords:"):].strip()
+            break
+
+    if keywords:
+        return keywords
+    else:
+        return "Keywords Tidak Ditemukan"
+
+
+def ekstrak_kata_kunci(dokumen):
+    kata_kunci = None
+    
+    for para in dokumen.paragraphs:
+        teks = para.text.strip()
+        
+        # Mencari pola "Kata kunci:" (dengan case-insensitive)
+        if teks.lower().startswith("kata kunci:") or teks.lower().startswith("keyword:") or teks.lower().startswith("kata kunci :") or teks.lower().startswith("keyword :"):
+            kata_kunci = teks[len("Kata kunci:"):].strip()
+            break
+
+    if kata_kunci:
+        return kata_kunci
+    else:
+        return "Kata Kunci Tidak Ditemukan"
+
+
+def ekstrak_bagian(dokumen):
     bagian = {
         "Judul": ekstrak_judul(dokumen),
         "Nama Penulis": ekstrak_nama(dokumen),
@@ -84,8 +116,8 @@ def ekstrak_bagian_dengan_nlp(dokumen):
         "Hasil dan Pembahasan": [],
         "Kesimpulan": [],
         "Referensi": [],
-        "Keywords": "",
-        "Kata Kunci": "",
+        "Keywords": ekstrak_keywords(dokumen),
+        "Kata Kunci": ekstrak_kata_kunci(dokumen),
     }
     
     section_flags = {
@@ -116,7 +148,7 @@ def ekstrak_bagian_dengan_nlp(dokumen):
             continue
 
         # Baris ini digunakan untuk mengabaikan bagian yang tidak perlu diambil
-        if any(keyword in text for keyword in ["Keywords", "Keyword", "Kata Kunci", "UCAPAN TERIMA KASIH", "LAMPIRAN"]):
+        if any(keyword.lower() in text.lower() for keyword in ["keywords", "keyword", "kata kunci", "ucapan terima kasih", "lampiran"]):
             reset_flags(section_flags)
             current_section = None
             continue
@@ -156,7 +188,7 @@ def ekstrak_bagian_dengan_nlp(dokumen):
             reset_flags(section_flags)
             current_section = None
             continue
-        elif para.style.name.startswith("Heading"):
+        elif para.style.name.startswith("Heading") or para.style.name.startswith("SUB"):
             continue
         else:
             # Penjelasan: Jika bagian yang sedang diambil adalah bagian yang memiliki list,
@@ -217,13 +249,6 @@ def ekstrak_bagian_dengan_nlp(dokumen):
         bagian["Kesimpulan"].append(current_list_kesimpulan)
     if current_list_referensi:
         bagian["Referensi"].append(current_list_referensi)
-
-    # Penjelasan: Bagian ini digunakan untuk mengambil kata kunci dari teks dokumen
-    # dengan menggunakan library spaCy dan mengambil kata benda dan kata benda khusus saja
-    teks_dokumen = "\n".join([para.text for para in dokumen.paragraphs])
-    nlp_dokumen = nlp(teks_dokumen)
-    kata_kunci = [token.text for token in nlp_dokumen if token.pos_ in ["NOUN", "PROPN"]]
-    bagian["Kata Kunci"] = "; ".join(set(kata_kunci[:5])) # Mengambil maksimal 5 kata kunci
 
     return bagian
 
@@ -426,28 +451,30 @@ def sesuaikan_dengan_template(dokumen_template, bagian):
                     # Increment nomor referensi
                     nomor_referensi += 1
 
-        elif "Keyword: Maksimal 5 kata dari jurnal (dipisahkan dengan titik koma)" in para.text:
+        elif "KK1" in para.text:
             para.clear()
-            run = para.add_run(f"Keyword: {bagian.get('Kata Kunci', 'Tidak ada kata kunci ditemukan.')}")
+            run = para.add_run(f"Keywords: {bagian.get('Keywords', 'Tidak ada keywords ditemukan.')}")
             run.font.size = Pt(10)
             run.font.name = 'Arial'
             run.italic = True
-            para.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
+            para.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
 
-        elif "Kata kunci: Maksimal 5 kata dari jurnal (dipisahkan dengan titik koma)" in para.text:
+        elif "KK2" in para.text:
             para.clear()
-            run = para.add_run(f"Kata kunci: {bagian.get('Kata Kunci', 'Tidak ada kata kunci ditemukan.')}")
+            run = para.add_run(f"Kata Kunci: {bagian.get('Kata Kunci', 'Tidak ada kata kunci ditemukan.')}")
             run.font.size = Pt(10)
             run.font.name = 'Arial'
-            para.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
+            para.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+
 
 def simpan_dokumen_baru(dokumen_template, path_baru):
     dokumen_template.save(path_baru)
 
+
 def konversi_skripsi_ke_jurnal(path_skripsi, path_template, path_output):
     dokumen_skripsi = Document(path_skripsi)
     dokumen_template = baca_template(path_template)
-    bagian = ekstrak_bagian_dengan_nlp(dokumen_skripsi)
+    bagian = ekstrak_bagian(dokumen_skripsi)
     sesuaikan_dengan_template(dokumen_template, bagian)
     simpan_dokumen_baru(dokumen_template, path_output)
 
