@@ -1,4 +1,4 @@
-from flask import Flask, request, send_file, jsonify, render_template
+from flask import Flask, request, send_file, jsonify, render_template, redirect, url_for, send_from_directory
 from werkzeug.utils import secure_filename
 import os
 from docx import Document
@@ -490,7 +490,14 @@ def konversi_skripsi_ke_jurnal(path_skripsi, path_template, path_output):
 def index():
     return render_template('index.html')
 
-# Penjelasan: Fungsi ini digunakan untuk mengupload file skripsi dan mengkonversinya menjadi jurnal
+@app.route('/template-ainet')
+def template_ainet():
+    return render_template('template_ainet.html')
+
+@app.route('/proses-generate')
+def proses_generate():
+    return render_template('proses_generate.html')
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
